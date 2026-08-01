@@ -43,6 +43,10 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
     private var enabledButton: Button? = null
     private var deletePending = false
     private val renderedWidgets = mutableListOf<Renderable>()
+    private var lastSavedText = ""
+    private var lastSavedName = ""
+    private var autoSaveTimer = 0
+    private var debugButton: Button? = null
 
     override fun init() {
         MacroRuntime.ensureLoaded()
@@ -67,9 +71,13 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
         bindButton = addButton(5, left + listWidth + 152, buttonY, 72, 20, "Bind")
         recorderButton = addButton(9, left + listWidth + 230, buttonY, 104, 20, "Start Recorder")
         recorderStopButton = addButton(10, left + listWidth + 340, buttonY, 104, 20, "Stop: ${MacroStorage.config.recorderStopKey}")
+        debugButton = addButton(18, left + listWidth + 450, buttonY, 72, 20, "Debug: OFF")
         builderButton = addButton(11, left + listWidth + 16, builderY, 124, 20, builderButtonText())
         runtimeViewerButton = addButton(13, left + listWidth + 146, builderY, 112, 20, "Viewer: ${MacroStorage.config.runtimeViewerKey}")
         addButton(14, left + listWidth + 264, builderY, 96, 20, "Folder")
+        addButton(15, left + listWidth + 366, builderY, 72, 20, "Help")
+        addButton(16, left + listWidth + 444, builderY, 72, 20, "Import")
+        addButton(17, left + listWidth + 522, builderY, 72, 20, "Reload")
         addButton(0, right - 62, buttonY, 62, 20, "Back")
 
         nameField = EditBox(font, left + listWidth + 18, top + 46, right - left - listWidth - 36, 18, Component.literal("")).also {
@@ -80,6 +88,7 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
         }
 
         editor.setBounds(left + listWidth + 18, top + 76, right - left - listWidth - 36, bottom - top - 136)
+        editor.focused = false
         loadSelection()
         refreshButtons()
     }
@@ -120,6 +129,8 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
 
         editor.render(graphics, font)
         renderedWidgets.forEach { it.render(graphics, mouseX, mouseY, partialTick) }
+
+        checkAutoSave()
     }
 
     override fun mouseClicked(mouseButtonEvent: MouseButtonEvent, doubleClick: Boolean): Boolean {
@@ -145,7 +156,11 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
             }
         }
 
-        if (editor.mouseClicked(mouseX.toInt(), mouseY.toInt(), button, font)) return true
+        if (editor.mouseClicked(mouseX.toInt(), mouseY.toInt(), button, font)) {
+            editor.focused = true
+            return true
+        }
+        editor.focused = false
         return super.mouseClicked(mouseButtonEvent, doubleClick)
     }
 
@@ -174,6 +189,17 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
 
     override fun keyPressed(keyEvent: KeyEvent): Boolean {
         val keyCode = keyEvent.key()
+        
+        // Se o editor está focado, processar apenas teclas do editor
+        if (editor.focused) {
+            if (keyCode == InputConstants.KEY_ESCAPE) {
+                editor.focused = false
+                return true
+            }
+            if (editor.keyPressed(keyCode, font, minecraft!!.keyboardHandler.clipboard)) return true
+            return true
+        }
+        
         if (waitingForRuntimeViewerBind) {
             bindRuntimeViewerKey(keyCode)
             return true
@@ -202,14 +228,18 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
         }
 
         if (nameField?.isFocused == true) return super.keyPressed(keyEvent)
-        if (editor.keyPressed(keyCode, font, minecraft!!.keyboardHandler.clipboard)) return true
         return super.keyPressed(keyEvent)
     }
 
     override fun charTyped(characterEvent: CharacterEvent): Boolean {
+        // Se o editor está focado, processar apenas caracteres do editor
+        if (editor.focused) {
+            val value = characterEvent.codepointAsString()
+            if (value.length == 1 && editor.charTyped(value[0])) return true
+            return true
+        }
+        
         if (nameField?.isFocused == true) return super.charTyped(characterEvent)
-        val value = characterEvent.codepointAsString()
-        if (value.length == 1 && editor.charTyped(value[0])) return true
         return super.charTyped(characterEvent)
     }
 
@@ -277,6 +307,10 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
                 waitingForRecorderStopBind = false
             }
             14 -> openMacrosFolder()
+            15 -> openHelpScreen()
+            16 -> importMacroFile()
+            17 -> reloadMacros()
+            18 -> toggleDebug()
         }
         refreshButtons()
     }
@@ -338,7 +372,9 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
 
     private fun deleteEntry() {
         if (mode == Mode.MACROS) {
-            if (selectedIndex in MacroStorage.config.macros.indices) MacroStorage.config.macros.removeAt(selectedIndex)
+            if (selectedIndex in MacroStorage.config.macros.indices) {
+                MacroStorage.config.macros.removeAt(selectedIndex)
+            }
             selectedIndex = selectedIndex.coerceAtMost(MacroStorage.config.macros.lastIndex.coerceAtLeast(0))
         } else {
             if (selectedIndex in MacroStorage.config.events.indices) MacroStorage.config.events.removeAt(selectedIndex)
@@ -391,6 +427,8 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
         if (labels.isEmpty()) {
             nameField?.value = ""
             editor.text = ""
+            lastSavedName = ""
+            lastSavedText = ""
             return
         }
         selectedIndex = selectedIndex.coerceIn(0, labels.lastIndex)
@@ -399,10 +437,14 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
             val macro = currentMacro()
             nameField?.value = macro?.name ?: ""
             editor.text = macro?.script ?: ""
+            lastSavedName = macro?.name ?: ""
+            lastSavedText = macro?.script ?: ""
         } else {
             val event = currentEvent()
             nameField?.value = event?.event ?: ""
             editor.text = event?.script ?: ""
+            lastSavedName = event?.event ?: ""
+            lastSavedText = event?.script ?: ""
         }
         editor.cursorEnd()
     }
@@ -412,6 +454,7 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
         val macro = currentMacro() ?: return
         if (keyCode == InputConstants.KEY_ESCAPE || keyCode == InputConstants.KEY_BACKSPACE) {
             macro.key = "NONE"
+            MacroRuntime.save()
             return
         }
 
@@ -420,6 +463,7 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
         if (macro.key == "NONE") {
             ClientUtils.displayChatMessage("\u00A7c[MacroEngine] Unsupported key: \u00A7f$normalized")
         }
+        MacroRuntime.save()
     }
 
     private fun bindRecorderStopKey(keyCode: Int) {
@@ -427,6 +471,7 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
         if (keyCode == InputConstants.KEY_ESCAPE || keyCode == InputConstants.KEY_BACKSPACE) {
             MacroStorage.config.recorderStopKey = "RSHIFT"
             MacroRuntime.save()
+            refreshButtons()
             return
         }
 
@@ -434,6 +479,7 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
         if (KeyboardUtils.isValidKeyName(normalized) && normalized != "NONE") {
             MacroStorage.config.recorderStopKey = normalized
             MacroRuntime.save()
+            refreshButtons()
         } else {
             ClientUtils.displayChatMessage("\u00A7c[MacroEngine] Unsupported recorder stop key: \u00A7f$normalized")
         }
@@ -444,6 +490,7 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
         if (keyCode == InputConstants.KEY_ESCAPE || keyCode == InputConstants.KEY_BACKSPACE) {
             MacroStorage.config.runtimeViewerKey = "V"
             MacroRuntime.save()
+            refreshButtons()
             return
         }
 
@@ -451,6 +498,7 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
         if (KeyboardUtils.isValidKeyName(normalized) && normalized != "NONE") {
             MacroStorage.config.runtimeViewerKey = normalized
             MacroRuntime.save()
+            refreshButtons()
         } else {
             ClientUtils.displayChatMessage("\u00A7c[MacroEngine] Unsupported runtime viewer key: \u00A7f$normalized")
         }
@@ -478,13 +526,40 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
         saveSelection()
         MacroRuntime.save()
         val folder = MacroStorage.macrosDir
+        Util.getPlatform().openUri(folder.toURI())
+    }
+
+    private fun openHelpScreen() {
+        minecraft?.setScreen(MacroHelpScreen(this))
+    }
+
+    private fun importMacroFile() {
+        saveSelection()
+        MacroRuntime.save()
+        
+        // Abre a pasta de macros para facilitar o import manual
+        val folder = MacroStorage.macrosDir
         if (!folder.exists()) folder.mkdirs()
-        runCatching {
-            Util.getPlatform().openPath(folder.toPath())
-        }.onFailure {
-            ClientUtils.displayChatMessage("\u00A7c[MacroEngine] Failed to open macros folder: \u00A7f${folder.absolutePath}")
-            ClientUtils.logError("[MacroEngine] Failed to open macros folder", it)
+        
+        try {
+            Util.getPlatform().openUri(folder.toURI())
+            ClientUtils.displayChatMessage("\u00A7a[MacroEngine] Aberta pasta de macros. Copie arquivos .txt para lá e clique em Reload.")
+        } catch (e: Exception) {
+            ClientUtils.displayChatMessage("\u00A7c[MacroEngine] Failed to open macros folder: ${e.message}")
         }
+    }
+
+    private fun reloadMacros() {
+        saveSelection()
+        MacroRuntime.reload()
+        loadSelection()
+        ClientUtils.displayChatMessage("\u00A7a[MacroEngine] Macros reloaded from file.")
+    }
+
+    private fun toggleDebug() {
+        BlockDebugOverlay.enabled = !BlockDebugOverlay.enabled
+        val status = if (BlockDebugOverlay.enabled) "enabled" else "disabled"
+        ClientUtils.displayChatMessage("\u00A7a[MacroEngine] Block debug overlay $status.")
     }
 
     private fun saveAndClose() {
@@ -500,6 +575,7 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
         builderButton?.message = builderButtonText()
         recorderStopButton?.message = MacroFonts.text(if (waitingForRecorderStopBind) "Press key" else "Stop: ${MacroStorage.config.recorderStopKey}")
         runtimeViewerButton?.message = MacroFonts.text(if (waitingForRuntimeViewerBind) "Press key" else "Viewer: ${MacroStorage.config.runtimeViewerKey}")
+        debugButton?.message = MacroFonts.text(if (BlockDebugOverlay.enabled) "Debug: ON" else "Debug: OFF")
         runButton?.active = if (mode == Mode.MACROS) currentMacro() != null else currentEvent() != null
         deleteButton?.active = itemLabels().isNotEmpty()
         deleteButton?.message = if (deletePending) {
@@ -533,5 +609,21 @@ class MacroScreen(private val previousScreen: Screen?) : Screen(Component.litera
         return Component.literal("")
             .append(MacroFonts.text("Start Builder "))
             .append(Component.literal("[BETA]").setStyle(MacroFonts.STYLE.withColor(ChatFormatting.RED)))
+    }
+
+    private fun checkAutoSave() {
+        autoSaveTimer++
+        if (autoSaveTimer < 60) return
+        autoSaveTimer = 0
+
+        val currentName = nameField?.value ?: ""
+        val currentText = editor.text
+
+        if (currentName != lastSavedName || currentText != lastSavedText) {
+            saveSelection()
+            MacroRuntime.save()
+            lastSavedName = currentName
+            lastSavedText = currentText
+        }
     }
 }

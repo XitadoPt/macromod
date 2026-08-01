@@ -8,7 +8,7 @@ import java.awt.Color
 
 class TextEditor {
     var text: String = ""
-    private var focused = false
+    var focused = false
     private var cursor = 0
     private var scrollLine = 0
     private var x = 0
@@ -72,7 +72,11 @@ class TextEditor {
         if (!focused || button != 0) return focused
 
         cursor = offsetAt(mouseX, mouseY, font)
-        selectionAnchor = cursor
+        if (!Minecraft.getInstance().hasShiftDown()) {
+            selectionAnchor = cursor
+        } else if (selectionAnchor == null) {
+            selectionAnchor = cursor
+        }
         selectedBracketOffset = ScriptSyntaxHighlighter.bracketOffsetNear(text, cursor)
             ?.takeIf { ScriptSyntaxHighlighter.highlight(text).pairAt(it) != null }
         return true
@@ -95,6 +99,13 @@ class TextEditor {
                 selectionAnchor = all?.start
                 cursor = all?.end ?: text.length
                 selectedBracketOffset = null
+                return true
+            }
+            controlDown() && keyCode == InputConstants.KEY_C -> {
+                val selection = selectionRange()
+                if (selection != null) {
+                    Minecraft.getInstance().keyboardHandler.setClipboard(text.substring(selection.start, selection.end))
+                }
                 return true
             }
             controlDown() && keyCode == InputConstants.KEY_V -> {
@@ -278,10 +289,21 @@ class TextEditor {
 
         val line = lines.getOrNull(lineIndex).orEmpty()
         var charIndex = 0
-        while (charIndex < line.length && font.width(MacroFonts.text(line.take(charIndex + 1))) < mouseX - x - 8) {
-            charIndex++
+        var closestIndex = 0
+        var closestDistance = Int.MAX_VALUE
+        val relativeX = mouseX - x - 8
+
+        for (i in 0..line.length) {
+            val charX = if (i == 0) 0 else font.width(MacroFonts.text(line.take(i)))
+            val distance = Math.abs(charX - relativeX)
+            
+            if (distance < closestDistance) {
+                closestDistance = distance
+                closestIndex = i
+            }
         }
-        return (offset + charIndex).coerceIn(0, text.length)
+
+        return (offset + closestIndex).coerceIn(0, text.length)
     }
 
     private fun selectionRange(): TextSelectionRange? {

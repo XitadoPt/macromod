@@ -1,6 +1,7 @@
 package github.xitadoptus.macro
 
 import github.xitadoptus.macro.engine.MacroRuntime
+import github.xitadoptus.macro.gui.BlockDebugOverlay
 import github.xitadoptus.macro.gui.MacroRuntimeViewerOverlay
 import github.xitadoptus.macro.gui.MacroScreen
 import github.xitadoptus.macro.recorder.MacroRecorder
@@ -50,10 +51,11 @@ object MacroMod : ClientModInitializer {
             openPendingGui(client)
         }
 
-        HudElementRegistry.attachElementAfter(VanillaHudElements.SUBTITLES, Identifier.fromNamespaceAndPath(MOD_ID, "recorder_overlay")) { graphics, _ ->
+        HudElementRegistry.attachElementAfter(VanillaHudElements.SUBTITLES, Identifier.fromNamespaceAndPath(MOD_ID, "recorder_overlay")) { graphics, tickCounter ->
             MacroRecorder.renderOverlay(graphics)
             StepBuilderCaptureController.renderOverlay(graphics)
             MacroRuntimeViewerOverlay.renderHud(graphics)
+            BlockDebugOverlay.render(graphics, Minecraft.getInstance())
         }
 
         ScreenEvents.AFTER_INIT.register { client, screen, _, _ ->
