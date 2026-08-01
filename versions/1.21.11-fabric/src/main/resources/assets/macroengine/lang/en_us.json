@@ -1,0 +1,8 @@
+{
+  "key.macroengine.keybindings": "MacroEngine",
+
+  "key.macroengine.viewer":         "Runtime Viewer",
+  "key.macroengine.recorder_stop":  "Recorder Stop",
+  "key.macroengine.builder_mark":   "Builder: Mark Position",
+  "key.macroengine.builder_target": "Builder: Set Target"
+}

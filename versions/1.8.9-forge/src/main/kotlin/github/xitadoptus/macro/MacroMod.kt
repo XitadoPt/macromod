@@ -1,6 +1,7 @@
 package github.xitadoptus.macro
 
 import github.xitadoptus.macro.engine.MacroRuntime
+import github.xitadoptus.macro.gui.GuiEventHandler
 import github.xitadoptus.macro.gui.GuiMacroEngine
 import github.xitadoptus.macro.gui.GuiMacroRuntimeViewer
 import github.xitadoptus.macro.update.UpdateChecker
@@ -31,6 +32,7 @@ class MacroMod {
         MacroRuntime.ensureLoaded()
         MinecraftForge.EVENT_BUS.register(MacroRuntime)
         MinecraftForge.EVENT_BUS.register(GuiMacroRuntimeViewer)
+        MinecraftForge.EVENT_BUS.register(GuiEventHandler)
         FMLCommonHandler.instance().bus().register(MacroRuntime)
         FMLCommonHandler.instance().bus().register(this)
         ClientCommandHandler.instance.registerCommand(MacroCommand())

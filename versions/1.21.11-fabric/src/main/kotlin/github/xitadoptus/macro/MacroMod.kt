@@ -4,6 +4,7 @@ import github.xitadoptus.macro.engine.MacroRuntime
 import github.xitadoptus.macro.gui.BlockDebugOverlay
 import github.xitadoptus.macro.gui.MacroRuntimeViewerOverlay
 import github.xitadoptus.macro.gui.MacroScreen
+import github.xitadoptus.macro.input.MacroKeyBindings
 import github.xitadoptus.macro.recorder.MacroRecorder
 import github.xitadoptus.macro.recorder.builder.StepBuilderCaptureController
 import github.xitadoptus.macro.recorder.builder.StepBuilderPreviewState
@@ -19,6 +20,7 @@ import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.ChatScreen
+import net.minecraft.client.gui.screens.options.controls.KeyBindsScreen
 import net.minecraft.resources.Identifier
 import java.io.File
 
@@ -45,10 +47,20 @@ object MacroMod : ClientModInitializer {
         MacroRuntime.ensureLoaded()
         MacroCommand.register()
 
+        // Registrar KeyMappings na categoria MacroEngine (aparece em Options → Controls)
+        MacroKeyBindings.register()
+
         ClientTickEvents.END_CLIENT_TICK.register { client ->
             MacroRuntime.onClientTick(client)
             UpdateChecker.onClientTick(client)
             openPendingGui(client)
+
+            // Quando o menu Controls está aberto, sincroniza o que o jogador mudou de volta pro MacroStorage
+            if (client.screen is KeyBindsScreen) {
+                if (MacroKeyBindings.syncToStorage()) {
+                    MacroRuntime.save()
+                }
+            }
         }
 
         HudElementRegistry.attachElementAfter(VanillaHudElements.SUBTITLES, Identifier.fromNamespaceAndPath(MOD_ID, "recorder_overlay")) { graphics, tickCounter ->

@@ -55,11 +55,14 @@ object MacroRuntime {
     fun save() {
         ensureLoaded()
         MacroStorage.save()
+        // Mantém os KeyMappings do menu Controls em sincronia com o que foi salvo
+        runCatching { github.xitadoptus.macro.input.MacroKeyBindings.syncFromStorage() }
     }
 
     fun reload() {
         MacroStorage.load()
         loaded = true
+        runCatching { github.xitadoptus.macro.input.MacroKeyBindings.syncFromStorage() }
     }
 
     fun runMacro(macro: MacroEntry, reason: String = macro.name, locals: Map<String, String> = emptyMap()) {

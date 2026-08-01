@@ -3,7 +3,9 @@
   "package": "github.xitadoptus.macro.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "MouseHandlerMixin"
+    "MouseHandlerMixin",
+    "MultiplayerScreenMixin",
+    "KeyMappingAccessor"
   ],
   "injectors": {
     "defaultRequire": 1
